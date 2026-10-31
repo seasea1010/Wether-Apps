@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -137,6 +138,9 @@ fun SoraWeatherApp() {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showSearch by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var wardsOnly by remember { mutableStateOf(false) }
+    val tokyoWards = listOf("千代田区", "中央区", "港区", "新宿区", "文京区", "台東区", "墨田区", "江東区", "品川区", "目黒区", "大田区", "世田谷区", "渋谷区", "中野区", "杉並区", "豊島区", "北区", "荒川区", "板橋区", "練馬区", "足立区", "葛飾区", "江戸川区")
 
     fun load(lat: Double, lon: Double) {
         scope.launch {
@@ -185,6 +189,7 @@ fun SoraWeatherApp() {
                     actions = {
                         IconButton(onClick = { showSearch = true }) { Icon(Icons.Default.Search, "都市を検索") }
                         IconButton(onClick = { useLocation() }) { Icon(Icons.Default.LocationOn, "現在地") }
+                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "設定") }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, titleContentColor = Color.White, actionIconContentColor = Color.White)
                 )
@@ -257,18 +262,75 @@ fun SoraWeatherApp() {
         }
     }
 
+    if (showSettings) {
+        AlertDialog(
+            onDismissRequest = { showSettings = false },
+            title = { Text("地域選択の設定") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("地域選択モード")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = !wardsOnly, onClick = { wardsOnly = false })
+                        Column {
+                            Text("全国対応", fontWeight = FontWeight.SemiBold)
+                            Text("全国の都道府県・市区町村を検索", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = wardsOnly, onClick = { wardsOnly = true })
+                        Column {
+                            Text("東京都23区のみ", fontWeight = FontWeight.SemiBold)
+                            Text("23区から一覧で選択", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSettings = false
+                    showSearch = true
+                    searchText = ""
+                }) { Text("地域を選択") }
+            },
+            dismissButton = { TextButton(onClick = { showSettings = false }) { Text("閉じる") } }
+        )
+    }
+
     if (showSearch) {
         AlertDialog(
             onDismissRequest = { showSearch = false },
-            title = { Text("都市を検索") },
+            title = { Text(if (wardsOnly) "東京23区から選択" else "全国から地域を検索") },
             text = {
-                OutlinedTextField(value = searchText, onValueChange = { searchText = it },
-                    label = { Text("都市名（例：東京、大阪）") }, singleLine = true)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (wardsOnly) {
+                        Text("東京都の区を選択してください", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                            items(tokyoWards) { ward ->
+                                TextButton(onClick = {
+                                    searchText = ward
+                                    scope.launch {
+                                        loading = true; error = null
+                                        try {
+                                            val (lat, lon) = geocode("$ward 東京都")
+                                            city = ward
+                                            weather = fetchWeather(lat, lon)
+                                            showSearch = false
+                                        } catch (e: Exception) { error = e.message ?: "地域を取得できませんでした" }
+                                        finally { loading = false }
+                                    }
+                                }, modifier = Modifier.fillMaxWidth()) { Text(ward, modifier = Modifier.fillMaxWidth()) }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(value = searchText, onValueChange = { searchText = it },
+                            label = { Text("都道府県・市区町村・区（例：大阪市北区）") }, singleLine = true)
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val query = searchText.trim()
-                    if (query.isNotEmpty()) scope.launch {
+                    if (!wardsOnly && query.isNotEmpty()) scope.launch {
                         loading = true; error = null
                         try {
                             val (lat, lon) = geocode(query)
